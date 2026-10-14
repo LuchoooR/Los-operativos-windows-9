@@ -77,9 +77,7 @@ int main(int argc, char* argv[]){
 
     crear_proceso_con_pseudocodigo(archivo_pseudocodigo, tamanio_proceso);
 
-    while (1){
-        sleep(1); // o usleep(100000);
-    }
+    pause();
 
     config_destroy(config);
     log_destroy(logger);

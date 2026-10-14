@@ -166,7 +166,6 @@ void* atender_cpu_dispatch(void* arg){
             }
             
             case IO: {
-                usleep(1000);
                 t_ejecucion* ejec = obtener_ejecucion_por_socket_dispatch(socket_dispatch);
                 
                 if(ejec == NULL){
@@ -191,7 +190,6 @@ void* atender_cpu_dispatch(void* arg){
             }
 
             case EXIT: {
-                usleep(1000);
                 t_ejecucion* ejec = obtener_ejecucion_por_socket_dispatch(socket_dispatch);
 
                 if(ejec == NULL){
@@ -212,7 +210,6 @@ void* atender_cpu_dispatch(void* arg){
             }
             
             case DUMP_MEMORY: {
-                usleep(1000);
                 t_ejecucion* ejec = obtener_ejecucion_por_socket_dispatch(socket_dispatch);
 
                 if(ejec == NULL){
@@ -432,6 +429,7 @@ void* atender_dispositivo_io(void* arg){
                     queue_push(cola_susp_ready, pcb);
                     pthread_mutex_unlock(&mutex_susp_ready);
                     sem_post(&sem_procesos_susp_ready);
+                    notificar_plp();
                 }
 
                 free(datos.dispositivo);

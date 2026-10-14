@@ -73,6 +73,7 @@ void syscall_exit(t_pcb* pcb) {
         log_info(logger, "## (%d) - Finaliza el proceso", pcb->pid);
         
         sem_post(&sem_procesos_new); // avisar al PLP que hay espacio
+        notificar_plp();
     } else {
         log_error(logger, "Error al finalizar PID=%d en Memoria", pcb->pid);
     }
