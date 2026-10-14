@@ -179,10 +179,6 @@ void manejar_write(int socket_cliente, t_log* logger) {
 
     pthread_mutex_lock(&mutex_memoria_usuario);
 
-    // 🔧 LIMPIAR TODA LA PÁGINA
-    // int inicio_pagina = (direccion_fisica / tam_pagina) * tam_pagina;
-    // memset(memoria_usuario + inicio_pagina, 0, tam_pagina);
-
     // 🔁 COPIAR DATOS
     memcpy(memoria_usuario + direccion_fisica, datos, tam_datos);
 
