@@ -1,0 +1,18 @@
+{
+    "files.associations": {
+        "log.h": "c",
+        "socket_utils.h": "c",
+        "string.h": "c",
+        "protocolo.h": "c",
+        "op_code.h": "c",
+        "thread_io.h": "c",
+        "threads_kernel.h": "c",
+        "kernel_syscalls.h": "c",
+        "operaciones_m.h": "c",
+        "config.h": "c",
+        "planificador.h": "c",
+        "queue.h": "c",
+        "list.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
+}

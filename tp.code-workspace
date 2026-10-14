@@ -1,0 +1,39 @@
+{
+  "folders": [
+    {
+      "name": "kernel",
+      "path": "kernel"
+    },
+    {
+      "name": "cpu",
+      "path": "cpu"
+    },
+    {
+      "name": "memoria",
+      "path": "memoria"
+    },
+    {
+      "name": "io",
+      "path": "io"
+    },
+    {
+      "name": "utils",
+      "path": "utils"
+    }
+  ],
+  "settings": {
+    "debug.onTaskErrors": "abort",
+    "files.associations": {
+      "*.h": "c"
+    },
+    "C_Cpp.autoAddFileAssociations": false,
+    "C_Cpp.errorSquiggles": "disabled",
+    "makefile.launchConfigurations": [
+      {
+        "cwd": "/home/utnso/tp-2025-1c-Los-Operativos-Windows-9/kernel/bin",
+        "binaryPath": "/home/utnso/tp-2025-1c-Los-Operativos-Windows-9/kernel/bin/kernel",
+        "binaryArgs": []
+      }
+    ]
+  }
+}
