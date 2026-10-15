@@ -50,6 +50,12 @@ typedef struct {
     bool completado;
 } t_desalojo_esperado;
 
+extern pthread_mutex_t mutex_plp;
+extern pthread_cond_t cond_plp;
+extern pthread_cond_t cond_desalojos;
+
+void notificar_plp();
+
 // === FUNCIONES ===
 // Funciones PCB
 t_pcb deserializar_pcb(void* buffer);

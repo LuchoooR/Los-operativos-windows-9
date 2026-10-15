@@ -39,7 +39,7 @@ t_list* lista_global_procesos;
 extern t_list* procesos_en_ejecucion; // clave: string con el pid
 
 
-// Mutex
+// Mutex y Condition Variables
 pthread_mutex_t mutex_new = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_ready = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_susp_ready = PTHREAD_MUTEX_INITIALIZER;
@@ -47,8 +47,18 @@ pthread_mutex_t mutex_susp_blocked = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_mutex_t mutex_procesos = PTHREAD_MUTEX_INITIALIZER;
 
+pthread_mutex_t mutex_plp = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_plp = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_desalojos = PTHREAD_COND_INITIALIZER;
+
 pthread_mutex_t mutex_desalojos_esperados = PTHREAD_MUTEX_INITIALIZER;
 extern t_list* desalojos_esperados;
+
+void notificar_plp() {
+    pthread_mutex_lock(&mutex_plp);
+    pthread_cond_signal(&cond_plp);
+    pthread_mutex_unlock(&mutex_plp);
+}
 
 // Semáforos
 sem_t sem_procesos_new;
@@ -116,6 +126,7 @@ void finalizar_proceso(t_pcb* pcb) {
 
     // 3. Llamar al planificador largo plazo
     sem_post(&sem_procesos_new);
+    notificar_plp();
 }
 
 void manejar_fin_io(int pid_finalizado) {
@@ -149,6 +160,7 @@ void manejar_fin_io(int pid_finalizado) {
         sem_post(&sem_procesos_susp_ready);
 
         log_info(logger, "## (%d) finalizó IO y pasa a SUSP_READY", pcb_encontrado->pid);
+        notificar_plp();
     } else {
         log_error(logger, "[KERNEL] No se encontró el proceso PID=%d en SUSP_BLOCKED", pid_finalizado);
     }
@@ -200,6 +212,7 @@ void crear_proceso(int pid, int tamanio, char* ruta_archivo) {
 
 
     sem_post(&sem_procesos_new);
+    notificar_plp();
 
 }
 
@@ -361,6 +374,7 @@ void* temporizador_suspension(void* arg) {
     
     // 7. AVISAR AL PLP
     sem_post(&sem_procesos_new);
+    notificar_plp();
     
     return NULL;
 }
@@ -738,17 +752,20 @@ void registrar_desalojo_esperado(int pid) {
 }
 
 bool esperar_desalojo_con_timeout(int pid, int timeout_ms) {
-    int tiempo_inicio = timestamp_milisegundos();
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+    ts.tv_sec += timeout_ms / 1000 + ts.tv_nsec / 1000000000;
+    ts.tv_nsec %= 1000000000;
+
+    pthread_mutex_lock(&mutex_desalojos_esperados);
     
-    while ((timestamp_milisegundos() - tiempo_inicio) < timeout_ms) {
-        pthread_mutex_lock(&mutex_desalojos_esperados);
-        
+    while (1) {
         bool encontrado = false;
         for (int i = 0; i < list_size(desalojos_esperados); i++) {
             t_desalojo_esperado* desalojo = list_get(desalojos_esperados, i);
             if (desalojo->pid == pid) {
                 if (desalojo->completado) {
-                    // Desalojo completado, limpiar y retornar true
                     list_remove_and_destroy_element(desalojos_esperados, i, free);
                     pthread_mutex_unlock(&mutex_desalojos_esperados);
                     return true;
@@ -758,18 +775,18 @@ bool esperar_desalojo_con_timeout(int pid, int timeout_ms) {
             }
         }
         
-        pthread_mutex_unlock(&mutex_desalojos_esperados);
-        
         if (!encontrado) {
-            // Ya no está en la lista, probablemente se completó
+            pthread_mutex_unlock(&mutex_desalojos_esperados);
             return true;
         }
-        
-        usleep(10000); // 10ms
+
+        int res = pthread_cond_timedwait(&cond_desalojos, &mutex_desalojos_esperados, &ts);
+        if (res != 0) {
+            break;
+        }
     }
-    
+
     // Timeout alcanzado, limpiar entrada
-    pthread_mutex_lock(&mutex_desalojos_esperados);
     for (int i = 0; i < list_size(desalojos_esperados); i++) {
         t_desalojo_esperado* desalojo = list_get(desalojos_esperados, i);
         if (desalojo->pid == pid) {
@@ -779,7 +796,6 @@ bool esperar_desalojo_con_timeout(int pid, int timeout_ms) {
     }
     pthread_mutex_unlock(&mutex_desalojos_esperados);
     
-    //og_warning(logger, "[DESALOJO] Timeout esperando desalojo de PID=%d", pid);
     return false;
 }
 
@@ -790,12 +806,11 @@ void marcar_desalojo_completado(int pid) {
         t_desalojo_esperado* desalojo = list_get(desalojos_esperados, i);
         if (desalojo->pid == pid) {
             desalojo->completado = true;
+            pthread_cond_broadcast(&cond_desalojos);
             pthread_mutex_unlock(&mutex_desalojos_esperados);
-            //log_debug(logger, "[DESALOJO] Marcado como completado PID=%d", pid);
             return;
         }
     }
     
     pthread_mutex_unlock(&mutex_desalojos_esperados);
-    //log_debug(logger, "[DESALOJO] No encontrado desalojo esperado para PID=%d", pid);
 }

@@ -50,13 +50,18 @@ void* planificador_largo_plazo(void* args) {
     getchar();
 
     while (1) {
+        pthread_mutex_lock(&mutex_plp);
+        while (queue_is_empty(cola_susp_ready) && list_is_empty(lista_new)) {
+            pthread_cond_wait(&cond_plp, &mutex_plp);
+        }
+
         // 2. Prioridad a procesos en cola SUSP_READY antes que NEW
         if (!queue_is_empty(cola_susp_ready)) {
             log_info(logger, "Se prioriza antes el que esta en SUSP READY");
-            sem_wait(&sem_procesos_susp_ready);
             pthread_mutex_lock(&mutex_susp_ready);
             t_pcb* pcb = queue_pop(cola_susp_ready);
             pthread_mutex_unlock(&mutex_susp_ready);
+            pthread_mutex_unlock(&mutex_plp);
             
             int socket_memoria = crear_conexion(ip_memoria, puerto_memoria);
             avisar_desuspension_a_memoria(pcb, socket_memoria);
@@ -70,22 +75,23 @@ void* planificador_largo_plazo(void* args) {
                 pthread_mutex_unlock(&mutex_ready);
                 sem_post(&sem_procesos_ready);
             } else {
-                // CAMBIO: Devolver el proceso a SUSP_READY
                 log_info(logger, "## (%d) No hay espacio para desuspender. Vuelve a SUSP_READY", pcb->pid);
                 pthread_mutex_lock(&mutex_susp_ready);
                 queue_push(cola_susp_ready, pcb);
                 pthread_mutex_unlock(&mutex_susp_ready);
-                sem_post(&sem_procesos_susp_ready); // Importante: restaurar el semáforo
+
+                // Esperar a que se libere memoria antes de reintentar
+                pthread_mutex_lock(&mutex_plp);
+                pthread_cond_wait(&cond_plp, &mutex_plp);
+                pthread_mutex_unlock(&mutex_plp);
             }
             
             liberar_conexion(socket_memoria);
             continue;
         }
-    
-    // ... resto del código
-        // 3. Esperar un proceso nuevo en la cola NEW
-        if (!list_is_empty(lista_new) && queue_is_empty(cola_susp_ready)){    
-            sem_wait(&sem_procesos_new);
+
+        // 3. Procesar de la cola NEW
+        if (!list_is_empty(lista_new)) {
             pthread_mutex_lock(&mutex_new);
             t_pcb* pcb = NULL;
 
@@ -98,41 +104,49 @@ void* planificador_largo_plazo(void* args) {
             }
 
             pthread_mutex_unlock(&mutex_new);
+            pthread_mutex_unlock(&mutex_plp);
 
-            // 4. Intentar iniciar el proceso en Memoria
-            t_proceso_arch* proceso = malloc(sizeof(t_proceso_arch));
-            proceso->pid = pcb->pid;
-            proceso->tamanio = pcb->tamanio;
-            proceso->arch = strdup(pcb->path);
+            if (pcb != NULL) {
+                // 4. Intentar iniciar el proceso en Memoria
+                t_proceso_arch* proceso = malloc(sizeof(t_proceso_arch));
+                proceso->pid = pcb->pid;
+                proceso->tamanio = pcb->tamanio;
+                proceso->arch = strdup(pcb->path);
 
-            int socket_memoria = crear_conexion(ip_memoria, puerto_memoria);
+                int socket_memoria = crear_conexion(ip_memoria, puerto_memoria);
 
-            enviar_proceso(proceso, socket_memoria, INICIAR_PROCESO);
-            int cod_op = recibir_operacion(socket_memoria, logger);
+                enviar_proceso(proceso, socket_memoria, INICIAR_PROCESO);
+                int cod_op = recibir_operacion(socket_memoria, logger);
 
-            if (cod_op == RESPUESTA_OK) {
-                // 5. Memoria aceptó: pasa a READY
-                cambiar_estado_con_metricas(pcb, ESTADO_READY);
-                log_info(logger, "## (%d) Pasa del estado NEW al estado READY", pcb->pid);
-                
-                pthread_mutex_lock(&mutex_ready);
-                list_add(lista_ready, pcb);
-                pthread_mutex_unlock(&mutex_ready);
+                if (cod_op == RESPUESTA_OK) {
+                    // 5. Memoria aceptó: pasa a READY
+                    cambiar_estado_con_metricas(pcb, ESTADO_READY);
+                    log_info(logger, "## (%d) Pasa del estado NEW al estado READY", pcb->pid);
 
-                sem_post(&sem_procesos_ready);
-            } else {
-                // 6. Memoria rechazó: vuelve a NEW y se intentará luego
-                pthread_mutex_lock(&mutex_new);
-                list_add_in_index(lista_new,0, pcb);  // ANTES: queue_push(cola_new, pcb);
-                pthread_mutex_unlock(&mutex_new);
+                    pthread_mutex_lock(&mutex_ready);
+                    list_add(lista_ready, pcb);
+                    pthread_mutex_unlock(&mutex_ready);
 
-                log_warning(logger, "## (%d) Memoria rechazó el encolar en READY. Se mantiene en NEW", pcb->pid);
-                sleep(5); // Para evitar bucles de CPU alta
+                    sem_post(&sem_procesos_ready);
+                } else {
+                    // 6. Memoria rechazó: vuelve a NEW y se intentará cuando se libere espacio
+                    pthread_mutex_lock(&mutex_new);
+                    list_add_in_index(lista_new, 0, pcb);
+                    pthread_mutex_unlock(&mutex_new);
+
+                    log_warning(logger, "## (%d) Memoria rechazó el encolar en READY. Se mantiene en NEW", pcb->pid);
+
+                    pthread_mutex_lock(&mutex_plp);
+                    pthread_cond_wait(&cond_plp, &mutex_plp);
+                    pthread_mutex_unlock(&mutex_plp);
+                }
+
+                liberar_conexion(socket_memoria);
+                free(proceso->arch);
+                free(proceso);
             }
-
-            liberar_conexion(socket_memoria);
-            free(proceso->arch);
-            free(proceso);
+        } else {
+            pthread_mutex_unlock(&mutex_plp);
         }
     }
     return NULL;

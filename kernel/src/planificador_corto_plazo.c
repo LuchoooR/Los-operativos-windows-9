@@ -77,13 +77,6 @@ void* planificador_corto_plazo(void* args) {
         } else if (strcmp(algoritmo_planificacion, "SRT") == 0) {
             list_sort(lista_ready, comparar_estimaciones);
             log_debug(logger, "READY ordenado por estimación (SRT)");
-
-
-            //log_info(logger, "[SJF DEBUG] Lista READY después de ordenar:");
-            for(int i = 0; i < list_size(lista_ready); i++) {
-             t_pcb* p = list_get(lista_ready, i);
-              //log_info(logger, "[SJF DEBUG] Posición %d: PID %d (estimación: %.2f)", i, p->pid, p->estimacion_rafaga);
-            }
         } else if (strcmp(algoritmo_planificacion, "FIFO") == 0) {
             log_debug(logger, "READY sin ordenar (FIFO)");
         }
@@ -102,48 +95,43 @@ void* planificador_corto_plazo(void* args) {
                     pthread_mutex_lock(&mutex_ready);
                     list_add(lista_ready, pcb);
                     pthread_mutex_unlock(&mutex_ready);
+                    sem_wait(&sem_cpu_libre);
                     sem_post(&sem_procesos_ready);
-                    
-                    
                     continue;
                 } else if (pcb->estimacion_rafaga < pcb_en_cpu_mas_lenta->estimacion_rafaga) {
                     log_info(logger, "## (%d) - Desalojando proceso por SRT (estimación: %.2f < %.2f)", pcb_en_cpu_mas_lenta->pid, pcb->estimacion_rafaga, pcb_en_cpu_mas_lenta->estimacion_rafaga);
                     
-                    // AQUÍ ESTÁ EL FIX: Registrar que esperamos un desalojo
                     registrar_desalojo_esperado(pcb_en_cpu_mas_lenta->pid);
-                    
-                    // Enviar interrupción
                     enviar_interrupcion_a_cpu_de_pid(pcb_en_cpu_mas_lenta->pid);
                     
-                    // Esperar confirmación del desalojo CON TIMEOUT
                     if (esperar_desalojo_con_timeout(pcb_en_cpu_mas_lenta->pid, 500)) { // 500ms timeout
                         log_info(logger, "## (%d) Desalojado por SRT", pcb_en_cpu_mas_lenta->pid);
                         cpu_destino = seleccionar_cpu_libre();
                     } else {
                         log_warning(logger, "## (%d) Timeout esperando desalojo - proceso probablemente en syscall", pcb_en_cpu_mas_lenta->pid);
-                        // Devolver a ready y continuar
                         pthread_mutex_lock(&mutex_ready);
                         list_add(lista_ready, pcb);
                         pthread_mutex_unlock(&mutex_ready);
+                        sem_wait(&sem_cpu_libre);
                         sem_post(&sem_procesos_ready);
                         continue;
                     }
                 } else {
-                    // No conviene desalojar → devolver a READY
+                    // No conviene desalojar → devolver a READY y esperar CPU libre
                     pthread_mutex_lock(&mutex_ready);
                     list_add(lista_ready, pcb);
                     pthread_mutex_unlock(&mutex_ready);
+                    sem_wait(&sem_cpu_libre);
                     sem_post(&sem_procesos_ready);
-                    usleep(15000);
                     continue;
                 }
             } else {
-                // Si no es SRT, se devuelve directamente a ready
+                // Si no es SRT, se devuelve a ready y se espera CPU libre
                 pthread_mutex_lock(&mutex_ready);
                 list_add(lista_ready, pcb);
                 pthread_mutex_unlock(&mutex_ready);
+                sem_wait(&sem_cpu_libre);
                 sem_post(&sem_procesos_ready);
-                usleep(15000);
                 continue;
             }
         }
