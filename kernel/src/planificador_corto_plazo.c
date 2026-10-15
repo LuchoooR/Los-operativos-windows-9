@@ -66,14 +66,6 @@ void* planificador_corto_plazo(void* args) {
         if (strcmp(algoritmo_planificacion, "SJF") == 0) {
             list_sort(lista_ready, comparar_estimaciones);
             log_debug(logger, "READY ordenado por estimación (SJF)");
-
-            // // DEBUG: Mostrar estado post-ordenamiento
-            // log_info(logger, "[SJF DEBUG] Lista READY después de ordenar:");
-            // for(int i = 0; i < list_size(lista_ready); i++) {
-            //     t_pcb* p = list_get(lista_ready, i);
-            //     log_info(logger, "[SJF DEBUG] Posición %d: PID %d (estimación: %.2f)", i, p->pid, p->estimacion_rafaga);
-            // }
-
         } else if (strcmp(algoritmo_planificacion, "SRT") == 0) {
             list_sort(lista_ready, comparar_estimaciones);
             log_debug(logger, "READY ordenado por estimación (SRT)");
